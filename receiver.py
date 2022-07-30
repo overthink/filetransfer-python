@@ -1,5 +1,7 @@
 """
-Registry that keeps track of all the known file receivers in the network.
+Receiver is meant to run on any machine wanting to participate in file
+transfers.  Registers itself with the registry server on startup. Tries to
+unregister at exit.
 """
 import asyncio
 import json
@@ -24,7 +26,7 @@ async def client_connected(reader, writer) -> None:
 
 
 async def aio_input(message: str) -> str:
-    """Collect user inptu from console in an async way."""
+    """Collect user input from console in an async way."""
     loop = asyncio.get_running_loop()
 
     def write_message():

@@ -6,11 +6,11 @@ network servers in Python.
 
 ## How it works
 
-* launch a `registry` at a well known IP and port
-* participants run a `receiver`
+* launch `registry.py` at a well known IP and port
+* participants each run a `receiver.py`
   * registers itself in the registry
   * accepts files from peers (after asking the user)
-* files are sent with the `send` command
+* files are sent with the `client.py` command
 
 ## Example
 
@@ -36,3 +36,7 @@ Back in the receiver's terminal the user will have to accept/deny the file
 transfer request. If accepted the file is streamed over to the receiver and
 saved in a `files` directory relative to `cwd`. Receiver can override save
 location with `SAVE_DIR` env variable.
+
+## Caveats
+
+* "works on my machine"
