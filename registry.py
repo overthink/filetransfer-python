@@ -29,15 +29,21 @@ class Registry:
         return self.receivers.get(name)
 
 
+async def write_line(writer, message: str) -> None:
+    writer.write((message + "\n").encode("utf8"))
+    await writer.drain()
+
+
+async def write_err(writer, e: Exception) -> None:
+    await write_line(writer, f"ERR: {e}")
+
+
 class RegistryConnector:
     """
     Logic for working with a Registry over the network.
-    - protocol is line-oriented UTF-8 strings
-    - one request per connection
-    - input is whitespace sepearated args
-    - output is json
-    - yes it's weird that input and output are not both json, but it's easier
-      to test with nc this way
+    - requests and responses are line-oriented UTF-8 strings ending with `\n`
+      - i.e. embedded newlines not allowed
+    - error responses start wiht ERR
     """
 
     def __init__(self, reg: Registry):
@@ -56,22 +62,33 @@ class RegistryConnector:
     async def _client_connected(
         self, remote_addr: Tuple[str, int], reader, writer
     ) -> None:
-        args = (await reader.readline()).decode("utf8").split()
-        print(f"received: {args}")
-        if not args:
-            return
-        if args[0] == "ls":
-            content = json.dumps(self.reg.list(), sort_keys=True) + "\n"
-            writer.write(content.encode("utf8"))
-            await writer.drain()
-        elif args[0] == "register":
-            name = args[1]
-            port = int(args[2])
-            self.reg.register(name, (remote_addr[0], port))
-        elif args[0] == "unregister":
-            name = args[1]
-            port = int(args[2])
-            self.reg.unregister(name, (remote_addr[0], port))
+        while not reader.at_eof():
+            args = (await reader.readline()).decode("utf8").split()
+            print(f"{remote_addr}: received: {args}")
+            if not args:
+                continue
+            if args[0] == "ls":
+                content = json.dumps(self.reg.list(), sort_keys=True)
+                await write_line(writer, content)
+            elif args[0] == "register":
+                try:
+                    name = args[1]
+                    port = int(args[2])
+                    self.reg.register(name, (remote_addr[0], port))
+                except Exception as e:
+                    await write_err(writer, e)
+                else:
+                    await write_line(writer, "OK")
+
+            elif args[0] == "unregister":
+                try:
+                    name = args[1]
+                    port = int(args[2])
+                    self.reg.unregister(name, (remote_addr[0], port))
+                except Exception as e:
+                    await write_err(writer, e)
+                else:
+                    await write_line(writer, "OK")
 
 
 async def main() -> None:
