@@ -35,37 +35,51 @@ async def aio_input(message: str) -> str:
     return await loop.run_in_executor(None, sys.stdin.readline)
 
 
-async def _client_connected(reader, writer) -> None:
-    args = (await reader.readline()).decode("utf8").split()
-    print(f"received: {args}")
-    if not args:
-        return
-    if args[0] == "send" and len(args) >= 4:
-        username = args[1]
-        filename = args[2]
-        filesize = args[3]
-        print(f"{username} wants to send you {filename} ({filesize} bytes)")
-        while True:
-            result = (await aio_input("Accept? y/n: ")).lower().strip()
-            if result in ["y", "n"]:
-                break
-        if result == "n":
-            writer.write("403\n".encode("utf8"))
-            await writer.drain()
-            return
-        writer.write("200\n".encode("utf8"))
-        await writer.drain()
+async def write_line(writer, message: str) -> None:
+    writer.write((message + "\n").encode("utf8"))
+    await writer.drain()
 
-        # TODO: make async
-        written = 0
-        with open(SAVE_DIR + "/" + filename, "wb") as f:
+
+async def write_err(writer, e: Union[str, Exception]) -> None:
+    await write_line(writer, f"ERR: {e}")
+
+
+async def _client_connected(reader, writer) -> None:
+    while not reader.at_eof():
+        args = (await reader.readline()).decode("utf8").split()
+        if not args:
+            continue
+        if args[0] == "send" and len(args) >= 4:
+            username = args[1]
+            filename = args[2]
+            filesize = int(args[3])
+            print(f"{username} wants to send you {filename} ({filesize} bytes)")
             while True:
-                chunk = await reader.read(4096)
-                if chunk == b"" or written == filesize:
+                result = (await aio_input("Accept? y/n: ")).lower().strip()
+                if result in ["y", "n"]:
                     break
-                # TODO: check we're not writing too many bytes
-                f.write(chunk)
-                written += len(chunk)
+            if result == "n":
+                await write_line(writer, "request denied by user")
+                return
+            await write_line(writer, "OK")
+
+            # TODO: make file writing async
+            # TODO: write to temp file until done, then rename
+            written = 0
+            with open(SAVE_DIR + "/" + filename, "wb") as f:
+                while written != filesize:
+                    chunk = await reader.read(4096)
+                    if chunk == b"":  # can happen if other side closes conn
+                        break
+                    bytes_remaining = filesize - written
+                    if len(chunk) > bytes_remaining:
+                        chunk = chunk[:bytes_remaining]
+                    f.write(chunk)
+                    written += len(chunk)
+            print(f"wrote {written} bytes")
+            await write_line(writer, "OK")
+        else:
+            await write_err(writer, f"unknown command {args[0]}")
 
 
 async def register(registry_addr: Tuple[str, int], name: str, port: int) -> None:

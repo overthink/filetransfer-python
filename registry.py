@@ -34,7 +34,7 @@ async def write_line(writer, message: str) -> None:
     await writer.drain()
 
 
-async def write_err(writer, e: Exception) -> None:
+async def write_err(writer, e: Union[str, Exception]) -> None:
     await write_line(writer, f"ERR: {e}")
 
 
@@ -43,7 +43,7 @@ class RegistryConnector:
     Logic for working with a Registry over the network.
     - requests and responses are line-oriented UTF-8 strings ending with `\n`
       - i.e. embedded newlines not allowed
-    - error responses start wiht ERR
+    - error responses start with ERR
     """
 
     def __init__(self, reg: Registry):
@@ -89,6 +89,16 @@ class RegistryConnector:
                     await write_err(writer, e)
                 else:
                     await write_line(writer, "OK")
+            elif args[0] == "lookup":
+                try:
+                    name = args[1]
+                    addr = self.reg.receiver_by_name(name)
+                    if not addr:
+                        await write_err(writer, "not found")
+                        continue
+                    await write_line(writer, json.dumps(addr))
+                except Exception as e:
+                    await write_err(writer, e)
 
 
 async def main() -> None:
